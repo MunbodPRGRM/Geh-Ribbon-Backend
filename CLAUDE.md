@@ -3,32 +3,66 @@
 Backend ของเว็บอีคอมเมิร์ซขายงานฝีมือริบบิ้น เป็น repo แยกต่างหากบน GitHub (ดูภาพรวมทั้งโปรเจกต์ที่ `../CLAUDE.md`)
 
 ## Stack
-- Node.js + Express
-- Prisma ORM + PostgreSQL
-- Auth: JWT (แนะนำเก็บใน httpOnly cookie)
-- เก็บรูปภาพสินค้าด้วย Cloudinary (ยังไม่ได้ติดตั้ง SDK)
+- Node.js + Express 5 (ESM, `"type": "module"`)
+- Prisma ORM **v6** + PostgreSQL — ⚠️ pin v6 ไว้ตั้งใจ (Prisma 7 เลิกรองรับ `url` ใน schema + บังคับ driver adapter)
+- Auth: JWT เก็บใน httpOnly cookie (login เดียวกันทั้งลูกค้า/แอดมิน แยกด้วย `role`)
+- รูปภาพสินค้า: ตอนนี้รับเป็น URL (ยังไม่ได้ต่อ Cloudinary upload จริง — เป็นงานเสริมในอนาคต)
 
-## สถานะปัจจุบัน
-- มีแค่ `prisma/schema.prisma` ที่ออกแบบไว้แล้ว ยังไม่ได้ setup โปรเจกต์ Express จริง (ยังไม่มี `package.json`, `src/`, server entrypoint)
-- ยังไม่ได้เชื่อมต่อ PostgreSQL จริง ต้องสร้าง `.env` พร้อม `DATABASE_URL` เอง (ดูตัวอย่างรูปแบบใน schema.prisma)
+## การรัน
+```bash
+npm install
+# ตั้งค่า .env ก่อน (ดู .env.example) — DATABASE_URL, JWT_SECRET ฯลฯ
+npx prisma migrate dev      # สร้าง/ซิงค์ตาราง (มี migration history แล้ว)
+npm run seed                # สร้าง admin + customer + สินค้าตัวอย่าง (idempotent)
+npm run dev                 # รัน dev server (nodemon) ที่ http://localhost:4000
+```
+script อื่น: `npm start`, `npm run prisma:studio`, `npm run prisma:generate`
 
-⚠️ **หมายเหตุ:** มี `node_modules/`, `package.json`, `.env` ค้างอยู่ในโฟลเดอร์นี้จากการทดลองรันคำสั่งของ Claude ก่อนหน้านี้ ซึ่งไม่ใช่ของจริง (ไม่ได้มาจาก `npm init` ของโปรเจกต์นี้) ลบไม่สำเร็จผ่าน sandbox เนื่องจากข้อจำกัดของ shared-folder mount — ควรลบไฟล์เหล่านี้เองก่อนเริ่ม setup โปรเจกต์จริง
+บัญชี seed เริ่มต้น (เปลี่ยนได้ผ่าน env `SEED_ADMIN_EMAIL` ฯลฯ):
+- admin: `admin@gehribbon.com` / `admin1234`
+- customer: `demo@gehribbon.com` / `demo1234`
+
+## โครงสร้าง
+```
+prisma/
+  schema.prisma          # source of truth ของ DB
+  migrations/            # Prisma migrate (baseline 0_init)
+  seed.js                # seed ข้อมูลตั้งต้น
+schema.sql               # DDL อ้างอิง (เทียบเท่า migrate output) — ไม่จำเป็นต้องรันถ้าใช้ migrate
+src/
+  server.js              # entrypoint (เช็ค DB ก่อน listen + graceful shutdown)
+  app.js                 # express app, middleware, mount routes, 404 + error handler
+  config/env.js          # โหลด/ตรวจ env รวมศูนย์
+  lib/prisma.js          # PrismaClient singleton
+  lib/jwt.js             # sign/verify JWT
+  lib/cookie.js          # set/clear auth cookie (httpOnly)
+  middleware/auth.js     # requireAuth / requireAdmin / optionalAuth
+  controllers/           # auth, product, cart, order, admin
+  routes/                # auth, product, cart, order, admin
+```
+
+## API endpoints (ครบและทดสอบแล้ว ~73 เคส)
+- **`/api/auth`** — `POST /register`, `POST /login`, `POST /logout`, `GET /me`
+- **`/api/products`** — public: `GET /`, `GET /:id`; admin: `POST /`, `PUT /:id`, `DELETE /:id`, `POST /:id/images`, `DELETE /:id/images/:imageId`
+- **`/api/cart`** (ต้องล็อกอิน) — `GET /`, `POST /`, `PUT /:productId`, `DELETE /:productId`, `DELETE /`
+- **`/api/orders`** (ต้องล็อกอิน) — `POST /` (checkout), `GET /`, `GET /:id`, `POST /:id/pay` (mock), `POST /:id/cancel`
+- **`/api/admin`** (ต้องเป็น ADMIN) — `GET /orders`, `GET /orders/:id`, `PATCH /orders/:id/status`, `GET /users`, `PATCH /users/:id/role`
+- `GET /api/health` — health check
 
 ## Database Schema (สรุปจาก schema.prisma)
-- `User` — มี `role` (CUSTOMER/ADMIN) ใช้ login เดียวกันทั้งลูกค้าและแอดมิน
-- `Product` + `ProductImage` — สินค้า 1 ชิ้นมีได้หลายรูป (เก็บ `url` + `publicId` จาก Cloudinary)
+- `User` — มี `role` (CUSTOMER/ADMIN)
+- `Product` + `ProductImage` — 1 สินค้าหลายรูป (`url` + `publicId` + `sortOrder`)
 - `CartItem` — unique (userId, productId) กันแถวซ้ำ
-- `Order` — เก็บ snapshot ที่อยู่จัดส่ง, มี `paymentMethod`/`paymentStatus`/`paymentRef`/`paidAt` รองรับเชื่อม payment gateway จริงในอนาคต (Omise/Stripe/2C2P) ตอนนี้ใช้ mock
-- `OrderItem` — snapshot ชื่อ/ราคาสินค้า ณ ตอนสั่งซื้อ
+- `Order` — snapshot ที่อยู่จัดส่ง + field รองรับ payment gateway จริงในอนาคต (`paymentMethod`/`paymentStatus`/`paymentRef`/`paidAt`) ตอนนี้ mock
+- `OrderItem` — snapshot ชื่อ/ราคา ณ ตอนสั่งซื้อ
 
-## ขอบเขตหน้า Admin (ส่วนที่ backend ต้องรองรับ)
-- จัดการสินค้า (CRUD + อัปโหลด/ลบรูปผ่าน Cloudinary)
-- จัดการคำสั่งซื้อ (ดู/เปลี่ยนสถานะออเดอร์)
-- จัดการผู้ใช้ (ดูรายชื่อ/ระงับบัญชี)
-- ใช้ JWT + role check จาก endpoint login เดียวกัน ไม่มี endpoint login แยกสำหรับ admin
+## หลักการที่ใช้ (สำคัญ)
+- ตัดสต็อกตอน checkout แบบ atomic (`updateMany` + เงื่อนไข `stock >= qty`) กัน oversell; คืนสต็อกตอน cancel
+- order status เป็น state machine (PENDING→PAID→SHIPPED→COMPLETED / CANCELLED) เช็คก่อนเปลี่ยน
+- mock payment 2 จังหวะ: checkout = PENDING/UNPAID → pay = PAID (เผื่อเสียบ gateway จริงทีหลัง)
+- ราคาเป็น `Decimal` ใน DB — คิดเงินฝั่ง server ด้วย `Number(price)`
 
 ## งานที่ยังไม่ได้ทำ (ขั้นต่อไป)
-1. `npm init` + ติดตั้ง express, prisma, @prisma/client, bcrypt, jsonwebtoken, cloudinary
-2. `npx prisma migrate dev` เพื่อสร้างตารางจริงใน PostgreSQL
-3. เขียน auth routes (register/login) + middleware เช็ค JWT และ role
-4. เขียน REST API: products, cart, orders, admin/*
+1. ต่อ Cloudinary upload จริง (ตอนนี้รับรูปเป็น URL) + multer
+2. Frontend (ดู `../frontend/CLAUDE.md`) — เชื่อม API เหล่านี้
+3. (เสริม) rate limiting, validation library (zod), เทส automated ถาวร
