@@ -1,0 +1,142 @@
+// Geh Ribbon (เก๋ริบบิ้น) - Prisma schema
+// Designed: 2026-06-20
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING // สร้างออเดอร์แล้ว ยังไม่ชำระเงิน
+  PAID // ชำระเงินแล้ว (mock หรือ gateway จริง)
+  SHIPPED // จัดส่งแล้ว
+  COMPLETED // ลูกค้าได้รับสินค้าแล้ว / ปิดออเดอร์
+  CANCELLED // ยกเลิก
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  FAILED
+  REFUNDED
+}
+
+// ---------- Models ----------
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String // bcrypt hash
+  name      String
+  phone     String?
+  role      Role     @default(CUSTOMER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders    Order[]
+  cartItems CartItem[]
+
+  @@map("users")
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?  @db.Text
+  price       Decimal  @db.Decimal(10, 2)
+  stock       Int      @default(0)
+  isActive    Boolean  @default(true) // เปิด/ปิดการขาย โดยไม่ต้องลบสินค้าจริง
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  images     ProductImage[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@map("products")
+}
+
+model ProductImage {
+  id        Int      @id @default(autoincrement())
+  productId Int
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String // secure_url จาก Cloudinary
+  publicId  String // public_id จาก Cloudinary ใช้ตอนลบรูป
+  sortOrder Int      @default(0) // ลำดับการแสดงรูป
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+model CartItem {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId Int
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, productId]) // สินค้าเดิมในตะกร้า -> update quantity ไม่สร้างแถวซ้ำ
+  @@map("cart_items")
+}
+
+model Order {
+  id          Int      @id @default(autoincrement())
+  orderNumber String   @unique // เช่น ORD-20260620-0001 สำหรับโชว์ลูกค้า
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id])
+  status      OrderStatus @default(PENDING)
+  totalAmount Decimal  @db.Decimal(10, 2)
+
+  // snapshot ที่อยู่จัดส่ง ณ ตอนสั่งซื้อ (ไม่ผูกกับโปรไฟล์ผู้ใช้ที่อาจเปลี่ยนทีหลัง)
+  shippingName       String
+  shippingPhone      String
+  shippingAddress    String @db.Text
+  shippingProvince   String
+  shippingPostalCode String
+
+  // รองรับ payment gateway จริงในอนาคต (Omise/Stripe/2C2P) — ตอนนี้ใช้ mock
+  paymentMethod String?       // "mock", "credit_card", "promptpay", ...
+  paymentStatus PaymentStatus @default(UNPAID)
+  paymentRef    String?       // transaction id จาก gateway (mock เช่น "MOCK-xxxxx")
+  paidAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items OrderItem[]
+
+  @@index([userId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        Int     @id @default(autoincrement())
+  orderId   Int
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+
+  // snapshot ข้อมูลสินค้า ณ ตอนสั่งซื้อ เผื่อสินค้าเปลี่ยนชื่อ/ราคา/ถูกลบทีหลัง
+  productName String
+  price       Decimal @db.Decimal(10, 2)
+  quantity    Int
+  subtotal    Decimal @db.Decimal(10, 2)
+
+  @@index([orderId])
+  @@map("order_items")
+}
