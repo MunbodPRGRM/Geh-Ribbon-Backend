@@ -6,7 +6,7 @@ Backend ของเว็บอีคอมเมิร์ซขายงาน
 - Node.js + Express 5 (ESM, `"type": "module"`)
 - Prisma ORM **v6** + PostgreSQL — ⚠️ pin v6 ไว้ตั้งใจ (Prisma 7 เลิกรองรับ `url` ใน schema + บังคับ driver adapter)
 - Auth: JWT เก็บใน httpOnly cookie (login เดียวกันทั้งลูกค้า/แอดมิน แยกด้วย `role`)
-- รูปภาพสินค้า: ตอนนี้รับเป็น URL (ยังไม่ได้ต่อ Cloudinary upload จริง — เป็นงานเสริมในอนาคต)
+- รูปภาพสินค้า: Cloudinary (อัปโหลดผ่าน `POST /api/admin/upload` ด้วย multer memory storage + `upload_stream`); ยังรับเป็น URL ตรง ๆ ได้ด้วย. ถ้าไม่ตั้ง env Cloudinary → endpoint อัปโหลดคืน 503 แต่ส่วนอื่นทำงานปกติ
 
 ## การรัน
 ```bash
@@ -46,7 +46,7 @@ src/
 - **`/api/products`** — public: `GET /`, `GET /:id`; admin: `POST /`, `PUT /:id`, `DELETE /:id`, `POST /:id/images`, `DELETE /:id/images/:imageId`
 - **`/api/cart`** (ต้องล็อกอิน) — `GET /`, `POST /`, `PUT /:productId`, `DELETE /:productId`, `DELETE /`
 - **`/api/orders`** (ต้องล็อกอิน) — `POST /` (checkout), `GET /`, `GET /:id`, `POST /:id/pay` (mock), `POST /:id/cancel`
-- **`/api/admin`** (ต้องเป็น ADMIN) — `GET /orders`, `GET /orders/:id`, `PATCH /orders/:id/status`, `GET /users`, `PATCH /users/:id/role`
+- **`/api/admin`** (ต้องเป็น ADMIN) — `GET /orders`, `GET /orders/:id`, `PATCH /orders/:id/status`, `GET /users`, `PATCH /users/:id/role`, `POST /upload` (multipart field `images`, อัปโหลดไป Cloudinary → `[{url, publicId}]`)
 - `GET /api/health` — health check
 
 ## Database Schema (สรุปจาก schema.prisma)
@@ -62,7 +62,7 @@ src/
 - mock payment 2 จังหวะ: checkout = PENDING/UNPAID → pay = PAID (เผื่อเสียบ gateway จริงทีหลัง)
 - ราคาเป็น `Decimal` ใน DB — คิดเงินฝั่ง server ด้วย `Number(price)`
 
-## งานที่ยังไม่ได้ทำ (ขั้นต่อไป)
-1. ต่อ Cloudinary upload จริง (ตอนนี้รับรูปเป็น URL) + multer
-2. Frontend (ดู `../frontend/CLAUDE.md`) — เชื่อม API เหล่านี้
+## งานที่ยังไม่ได้ทำ (เสริม/อนาคต)
+1. ตั้งค่า env Cloudinary จริง (`CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET`) เพื่อเปิดใช้อัปโหลด
+2. ลบรูปเก่าจาก Cloudinary ตอน update product (replace images) / delete product (ตอนนี้ทำเฉพาะ removeImage)
 3. (เสริม) rate limiting, validation library (zod), เทส automated ถาวร

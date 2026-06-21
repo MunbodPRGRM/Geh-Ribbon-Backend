@@ -6,12 +6,17 @@ import {
   listUsers,
   updateUserRole,
 } from "../controllers/adminController.js";
+import { uploadImages } from "../controllers/uploadController.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { upload } from "../middleware/upload.js";
 
 const router = Router();
 
 // ทุก endpoint ต้องล็อกอิน + เป็น ADMIN
 router.use(requireAuth, requireAdmin);
+
+// อัปโหลดรูปสินค้าไป Cloudinary
+router.post("/upload", upload.array("images", 10), uploadImages);
 
 // orders
 router.get("/orders", listAllOrders);

@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma.js";
+import cloudinary, { cloudinaryConfigured } from "../config/cloudinary.js";
 
 const imagesOrdered = { images: { orderBy: { sortOrder: "asc" } } };
 
@@ -220,6 +221,15 @@ export async function removeImage(req, res, next) {
     const image = await prisma.productImage.findUnique({ where: { id: imageId } });
     if (!image || image.productId !== id)
       return res.status(404).json({ message: "ไม่พบรูปนี้ในสินค้า" });
+
+    // ลบไฟล์จริงจาก Cloudinary ด้วย (best-effort) ถ้ารูปนี้มาจาก Cloudinary
+    if (cloudinaryConfigured && image.publicId) {
+      try {
+        await cloudinary.uploader.destroy(image.publicId);
+      } catch {
+        // ลบจาก Cloudinary ไม่สำเร็จ ไม่ถือเป็น error หลัก
+      }
+    }
 
     await prisma.productImage.delete({ where: { id: imageId } });
     res.json({ message: "ลบรูปแล้ว" });
