@@ -14,7 +14,11 @@ export const env = {
   jwtSecret: required("JWT_SECRET"),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
   port: Number(process.env.PORT) || 4000,
-  clientOrigin: process.env.CLIENT_ORIGIN || "http://localhost:5173",
+  // รองรับหลาย origin คั่นด้วย comma (เช่น โดเมน prod + preview URL ของ Vercel)
+  clientOrigins: (process.env.CLIENT_ORIGIN || "http://localhost:5173")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean),
   nodeEnv: process.env.NODE_ENV || "development",
   isProd: process.env.NODE_ENV === "production",
 };

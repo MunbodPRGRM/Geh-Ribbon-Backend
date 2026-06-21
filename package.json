@@ -8,11 +8,16 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
+    "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
     "prisma:pull": "prisma db pull",
     "prisma:studio": "prisma studio",
     "seed": "prisma db seed"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

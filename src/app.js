@@ -10,12 +10,23 @@ import adminRoutes from "./routes/adminRoutes.js";
 
 const app = express();
 
+// อยู่หลัง reverse proxy ของ host (Render/Railway/Fly/ฯลฯ) ตอน production
+// ให้ Express เชื่อ X-Forwarded-* เพื่อรู้ว่าเป็น HTTPS จริง (จำเป็นกับ secure cookie)
+if (env.isProd) app.set("trust proxy", 1);
+
 // --- Global middleware ---
 app.use(express.json());
 app.use(cookieParser());
 app.use(
   cors({
-    origin: env.clientOrigin, // อนุญาตเฉพาะ frontend
+    // อนุญาตเฉพาะ frontend ที่กำหนด (รองรับหลาย origin: prod + preview)
+    // ไม่มี origin (เช่น curl/health check server-to-server) ก็ปล่อยผ่าน
+    origin(origin, callback) {
+      if (!origin || env.clientOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS: ไม่อนุญาต origin ${origin}`));
+    },
     credentials: true, // ให้ส่ง/รับ cookie (JWT httpOnly) ข้าม origin ได้
   })
 );
